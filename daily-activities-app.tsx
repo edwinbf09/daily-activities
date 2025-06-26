@@ -29,6 +29,8 @@ import {
   Settings,
   FileText,
   ArrowLeft,
+  Database,
+  Cloud,
 } from "lucide-react"
 import type { ActivityData } from "./lib/types"
 import { PDFReports } from "./components/pdf-reports"
@@ -71,23 +73,24 @@ export default function DailyActivitiesApp() {
   const loadActivities = async () => {
     try {
       setLoading(true)
+      const response = await fetch("/api/activities")
 
-      // TODO: Implementar carga desde la base de datos
-      // Aquí deberías reemplazar la carga desde localStorage con la carga desde Neon
-      const stored = localStorage.getItem("activities")
-      if (stored) {
-        const parsedActivities = JSON.parse(stored)
-        setActivities(parsedActivities)
+      if (response.ok) {
+        const data = await response.json()
+        setActivities(data)
+      } else {
+        throw new Error("Failed to fetch activities")
       }
     } catch (error) {
       console.error("Error loading activities:", error)
+      toast({
+        title: "Error de conexión",
+        description: "No se pudieron cargar las actividades. Verifica tu conexión.",
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
-  }
-
-  const saveToLocalStorage = (updatedActivities: ActivityData[]) => {
-    localStorage.setItem("activities", JSON.stringify(updatedActivities))
   }
 
   const addActivity = async () => {
@@ -103,41 +106,47 @@ export default function DailyActivitiesApp() {
     try {
       setSubmitting(true)
 
-      const newActivity: ActivityData = {
-        id: Date.now().toString(),
-        name: formData.name,
-        description: formData.description || null,
-        date: formData.date,
-        amount: Number.parseFloat(formData.amount) || 0,
-        category: formData.category,
-        is_paid: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }
-
-      const updatedActivities = [newActivity, ...activities]
-      setActivities(updatedActivities)
-      saveToLocalStorage(updatedActivities)
-
-      setFormData({
-        name: "",
-        description: "",
-        date: "",
-        amount: "",
-        category: "",
+      const response = await fetch("/api/activities", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          description: formData.description || null,
+          date: formData.date,
+          amount: Number.parseFloat(formData.amount) || 0,
+          category: formData.category,
+          is_paid: false,
+        }),
       })
 
-      // Si venimos de una categoría específica, regresar a esa categoría
-      if (selectedCategory) {
-        setCurrentView("category")
+      if (response.ok) {
+        const newActivity = await response.json()
+        setActivities([newActivity, ...activities])
+
+        setFormData({
+          name: "",
+          description: "",
+          date: "",
+          amount: "",
+          category: "",
+        })
+
+        // Si venimos de una categoría específica, regresar a esa categoría
+        if (selectedCategory) {
+          setCurrentView("category")
+        } else {
+          setCurrentView("home")
+        }
+
+        toast({
+          title: "¡Actividad agregada!",
+          description: "Se ha guardado en la base de datos",
+        })
       } else {
-        setCurrentView("home")
+        throw new Error("Failed to create activity")
       }
-
-      toast({
-        title: "¡Actividad agregada!",
-        description: "Guardado localmente",
-      })
     } catch (error) {
       console.error("Error adding activity:", error)
       toast({
@@ -152,14 +161,19 @@ export default function DailyActivitiesApp() {
 
   const removeActivity = async (id: string) => {
     try {
-      const updatedActivities = activities.filter((activity) => activity.id !== id)
-      setActivities(updatedActivities)
-      saveToLocalStorage(updatedActivities)
-
-      toast({
-        title: "Actividad eliminada",
-        description: "La actividad se ha eliminado correctamente",
+      const response = await fetch(`/api/activities/${id}`, {
+        method: "DELETE",
       })
+
+      if (response.ok) {
+        setActivities(activities.filter((activity) => activity.id !== id))
+        toast({
+          title: "Actividad eliminada",
+          description: "La actividad se ha eliminado correctamente",
+        })
+      } else {
+        throw new Error("Failed to delete activity")
+      }
     } catch (error) {
       console.error("Error removing activity:", error)
       toast({
@@ -172,18 +186,30 @@ export default function DailyActivitiesApp() {
 
   const togglePaidStatus = async (id: string) => {
     try {
-      const updatedActivities = activities.map((activity) =>
-        activity.id === id ? { ...activity, is_paid: !activity.is_paid } : activity,
-      )
-
-      setActivities(updatedActivities)
-      saveToLocalStorage(updatedActivities)
-
       const activity = activities.find((a) => a.id === id)
-      toast({
-        title: activity?.is_paid ? "Marcado como no pagado" : "Marcado como pagado",
-        description: `La actividad "${activity?.name}" se ha actualizado`,
+      if (!activity) return
+
+      const response = await fetch(`/api/activities/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          is_paid: !activity.is_paid,
+        }),
       })
+
+      if (response.ok) {
+        const updatedActivity = await response.json()
+        setActivities(activities.map((a) => (a.id === id ? updatedActivity : a)))
+
+        toast({
+          title: activity.is_paid ? "Marcado como no pagado" : "Marcado como pagado",
+          description: `La actividad "${activity.name}" se ha actualizado`,
+        })
+      } else {
+        throw new Error("Failed to update activity")
+      }
     } catch (error) {
       console.error("Error updating payment status:", error)
       toast({
@@ -247,24 +273,31 @@ export default function DailyActivitiesApp() {
     <div className="space-y-6">
       <div className="text-center">
         <h2 className="text-2xl font-bold text-gray-900">Configuración</h2>
-        <p className="text-gray-600 mt-2">Gestiona la sincronización y respaldos</p>
+        <p className="text-gray-600 mt-2">Información de la aplicación</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Base de Datos</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="h-5 w-5 text-green-600" />
+            Base de Datos
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="text-center py-4">
-            <p className="text-green-600 font-medium">✅ Base de datos configurada</p>
-            <p className="text-sm text-gray-500 mt-1">Tus datos se guardan automáticamente</p>
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <Cloud className="h-6 w-6 text-blue-600" />
+              <p className="text-blue-600 font-medium">Neon Database</p>
+            </div>
+            <p className="text-sm text-gray-500 mt-1">Tus datos están seguros en la nube</p>
+            <Badge className="mt-2 bg-green-100 text-green-700">✅ Conectado</Badge>
           </div>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Información de la App</CardTitle>
+          <CardTitle>📊 Información de la App</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
           <div className="flex justify-between">
@@ -272,8 +305,12 @@ export default function DailyActivitiesApp() {
             <span className="font-medium">{activities.length}</span>
           </div>
           <div className="flex justify-between">
-            <span className="text-gray-600">Estado de sincronización:</span>
-            <Badge variant="secondary">Local</Badge>
+            <span className="text-gray-600">Estado:</span>
+            <Badge variant="secondary">✅ Funcionando</Badge>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-600">Base de datos:</span>
+            <Badge className="bg-blue-100 text-blue-700">🚀 Neon</Badge>
           </div>
           <div className="flex justify-between">
             <span className="text-gray-600">Última actualización:</span>
@@ -282,6 +319,21 @@ export default function DailyActivitiesApp() {
                 ? new Date(Math.max(...activities.map((a) => new Date(a.updated_at).getTime()))).toLocaleString()
                 : "N/A"}
             </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>🚀 Funciones Disponibles</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2 text-sm text-gray-600">
+            <p>• ✅ Sincronización automática</p>
+            <p>• ✅ Reportes PDF profesionales</p>
+            <p>• ✅ Categorías personalizadas</p>
+            <p>• ✅ Control de gastos</p>
+            <p>• ✅ Acceso desde cualquier dispositivo</p>
           </div>
         </CardContent>
       </Card>
@@ -296,6 +348,10 @@ export default function DailyActivitiesApp() {
       <div className="text-center py-8 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl">
         <h1 className="text-4xl font-bold mb-2">¡Bienvenido!</h1>
         <p className="text-xl opacity-90">Organiza tu día y alcanza tus metas</p>
+        <div className="flex items-center justify-center gap-2 mt-2">
+          <Badge className="bg-white/20 text-white">✨ Con Base de Datos</Badge>
+          <Badge className="bg-white/20 text-white">🚀 Neon</Badge>
+        </div>
       </div>
 
       {/* Quick Stats */}
@@ -530,7 +586,7 @@ export default function DailyActivitiesApp() {
             {submitting ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Guardando...
+                Guardando en base de datos...
               </>
             ) : (
               <>
@@ -765,7 +821,8 @@ export default function DailyActivitiesApp() {
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Cargando actividades...</p>
+          <p className="text-gray-600">Conectando con la base de datos...</p>
+          <p className="text-sm text-gray-500 mt-1">Neon Database</p>
         </div>
       </div>
     )
@@ -780,6 +837,9 @@ export default function DailyActivitiesApp() {
             <div className="flex items-center gap-2">
               <Activity className="h-8 w-8 text-blue-600" />
               <span className="text-xl font-bold text-gray-900">Nuestra agenda</span>
+              <Badge variant="outline" className="ml-2 text-xs bg-green-50 text-green-700">
+                🚀 Neon DB
+              </Badge>
             </div>
             <div className="flex gap-2">
               <Button

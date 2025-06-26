@@ -1,5 +1,10 @@
-import DailyActivitiesApp from "../daily-activities-app"
+import { AuthProvider } from "@/lib/auth"
+import { AppWithAuth } from "@/components/app-with-auth"
 
 export default function Page() {
-  return <DailyActivitiesApp />
+  return (
+    <AuthProvider>
+      <AppWithAuth />
+    </AuthProvider>
+  )
 }

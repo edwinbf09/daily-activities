@@ -7,11 +7,12 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     const activity = await updateActivity(params.id, body)
 
     if (!activity) {
-      return NextResponse.json({ error: "Failed to update activity" }, { status: 500 })
+      return NextResponse.json({ error: "Activity not found or failed to update" }, { status: 404 })
     }
 
     return NextResponse.json(activity)
   } catch (error) {
+    console.error("API Error:", error)
     return NextResponse.json({ error: "Failed to update activity" }, { status: 500 })
   }
 }
@@ -21,11 +22,12 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     const success = await deleteActivity(params.id)
 
     if (!success) {
-      return NextResponse.json({ error: "Failed to delete activity" }, { status: 500 })
+      return NextResponse.json({ error: "Activity not found or failed to delete" }, { status: 404 })
     }
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    console.error("API Error:", error)
     return NextResponse.json({ error: "Failed to delete activity" }, { status: 500 })
   }
 }
